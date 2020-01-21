@@ -18,7 +18,7 @@ static VERSION: &str = "1.0.18";
 fn main() {
     println!("cargo:rerun-if-env-changed=SODIUM_LIB_DIR");
     println!("cargo:rerun-if-env-changed=SODIUM_SHARED");
-    println!("cargo:rerun-if-env-changed=SODIUM_USE_PKG_CONFIG");
+    println!("cargo:rerun-if-env-changed=SODIUM_DYNAMIC");
 
     if cfg!(target_env = "msvc") {
         // vcpkg requires to set env VCPKGRS_DYNAMIC
@@ -28,37 +28,13 @@ fn main() {
         println!("cargo:rerun-if-env-changed=SODIUM_DISABLE_PIE");
     }
 
-    if env::var("SODIUM_STATIC").is_ok() {
-        panic!("SODIUM_STATIC is deprecated. Use SODIUM_SHARED instead.");
+    if env::var("SODIUM_SHARED").is_ok() {
+        env::set_var("SODIUM_DYNAMIC", "true");
     }
 
-    let lib_dir_isset = env::var("SODIUM_LIB_DIR").is_ok();
-    let use_pkg_isset = if cfg!(feature = "use-pkg-config") {
-        true
-    } else {
-        env::var("SODIUM_USE_PKG_CONFIG").is_ok()
-    };
-    let shared_isset = env::var("SODIUM_SHARED").is_ok();
-
-    if lib_dir_isset && use_pkg_isset {
-        panic!("SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG. Set the only one env variable");
-    }
-
-    if lib_dir_isset {
-        find_libsodium_env();
-    } else if use_pkg_isset {
-        if shared_isset {
-            println!("cargo:warning=SODIUM_SHARED has no effect with SODIUM_USE_PKG_CONFIG");
-        }
-
-        find_libsodium_pkg();
-    } else {
-        if shared_isset {
-            println!(
-                "cargo:warning=SODIUM_SHARED has no effect for building libsodium from source"
-            );
-        }
-
+    if let Ok(lib_dir) = env::var("SODIUM_LIB_DIR") {
+        find_libsodium_env(&lib_dir);
+    } else if !find_libsodium_pkg() {
         build_libsodium();
     }
 }
@@ -66,20 +42,20 @@ fn main() {
 /* Must be called when SODIUM_LIB_DIR is set to any value
 This function will set `cargo` flags.
 */
-fn find_libsodium_env() {
-    let lib_dir = env::var("SODIUM_LIB_DIR").unwrap(); // cannot fail
-
-    println!("cargo:rustc-link-search=native={}", lib_dir);
-    let mode = if env::var("SODIUM_SHARED").is_ok() {
+fn find_libsodium_env(lib_dir: &str) {
+    let mode = if env::var("SODIUM_DYNAMIC").is_ok() {
         "dylib"
     } else {
         "static"
     };
+
     let name = if cfg!(target_env = "msvc") {
         "libsodium"
     } else {
         "sodium"
     };
+
+    println!("cargo:rustc-link-search=native={}", lib_dir);
     println!("cargo:rustc-link-lib={}={}", mode, name);
     println!(
         "cargo:warning=Using unknown libsodium version.  This crate is tested against \
@@ -92,7 +68,7 @@ fn find_libsodium_env() {
 This function will set `cargo` flags.
 */
 #[cfg(target_env = "msvc")]
-fn find_libsodium_pkg() {
+fn find_libsodium_pkg() -> bool {
     match vcpkg::probe_package("libsodium") {
         Ok(lib) => {
             println!(
@@ -107,18 +83,27 @@ fn find_libsodium_pkg() {
                 println!("cargo:include={}", include_dir.to_str().unwrap());
             }
         }
-        Err(e) => {
-            panic!(format!("Error: {:?}", e));
+        Err(_) => {
+            println!("cargo:warning=pkg-config was unable to find libsodium");
+            return false;
         }
     };
+
+    true
 }
 
 /* Must be called when SODIUM_USE_PKG_CONFIG env var is set
 This function will set `cargo` flags.
 */
 #[cfg(not(target_env = "msvc"))]
-fn find_libsodium_pkg() {
-    match pkg_config::Config::new().probe("libsodium") {
+fn find_libsodium_pkg() -> bool {
+    let dynamic = env::var("SODIUM_DYNAMIC").is_ok();
+    let library = pkg_config::Config::new()
+        .env_metadata(true)
+        .statik(!dynamic)
+        .probe("libsodium");
+
+    match library {
         Ok(lib) => {
             if lib.version != VERSION {
                 println!(
@@ -134,10 +119,13 @@ fn find_libsodium_pkg() {
                 println!("cargo:include={}", include_dir.to_str().unwrap());
             }
         }
-        Err(e) => {
-            panic!(format!("Error: {:?}", e));
+        Err(_) => {
+            println!("cargo:warning=pkg-config was unable to find libsodium");
+            return false;
         }
     }
+
+    true
 }
 
 #[cfg(windows)]

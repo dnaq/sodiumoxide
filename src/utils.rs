@@ -1,5 +1,6 @@
 //! Libsodium utility functions
 use ffi;
+use std::mem;
 
 /// `memzero()` tries to effectively zero out the data in `x` even if
 /// optimizations are being applied to the code.
@@ -87,6 +88,14 @@ pub fn add_le(x: &mut [u8], y: &[u8]) -> Result<(), ()> {
         Ok(())
     } else {
         Err(())
+    }
+}
+
+pub(crate) fn memzero_value<T>(v: T) {
+    let mut v = mem::MaybeUninit::new(v);
+    let sz = mem::size_of::<T>();
+    unsafe {
+        ffi::sodium_memzero(v.as_mut_ptr() as *mut _, sz);
     }
 }
 

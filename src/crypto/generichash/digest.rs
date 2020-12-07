@@ -1,3 +1,4 @@
+use crate::utils::memzero;
 use ffi::crypto_generichash_BYTES_MAX;
 use std::cmp::{Eq, Ordering, PartialEq, PartialOrd};
 use std::fmt::{Debug, Formatter};
@@ -12,6 +13,13 @@ use std::ops::{Index, Range, RangeFrom, RangeFull, RangeTo};
 pub struct Digest {
     pub(super) len: usize,
     pub(super) data: [u8; crypto_generichash_BYTES_MAX as usize],
+}
+
+impl Digest {
+    /// Securely erase `Digest` using `utils::memzero`
+    pub fn drop_memzero(mut self) {
+        memzero(&mut self.data)
+    }
 }
 
 impl Debug for Digest {

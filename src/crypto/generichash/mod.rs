@@ -6,6 +6,7 @@ use ffi::{
     crypto_generichash_state, crypto_generichash_update,
 };
 
+use crate::utils::memzero_value;
 use libc::c_ulonglong;
 use std::mem;
 use std::ptr;
@@ -85,9 +86,7 @@ impl State {
         }
     }
 
-    /// `finalize` finalizes the state and returns the digest value. `finalize` consumes the
-    /// `State` so that it cannot be accidentally reused.
-    pub fn finalize(mut self) -> Result<Digest, ()> {
+    fn finalize_mut(&mut self) -> Result<Digest, ()> {
         let mut result = Digest {
             len: self.out_len,
             data: [0u8; crypto_generichash_BYTES_MAX as usize],
@@ -100,6 +99,20 @@ impl State {
         } else {
             Err(())
         }
+    }
+
+    /// `finalize` finalizes the state and returns the digest value. `finalize` consumes the
+    /// `State` so that it cannot be accidentally reused.
+    pub fn finalize(mut self) -> Result<Digest, ()> {
+        self.finalize_mut()
+    }
+
+    /// `finalize` finalizes the state and returns the digest value. `finalize` consumes the
+    /// `State` and securely erases it using `utils::memzero`. Use this function for confidential data.
+    pub fn finalize_memzero(mut self) -> Result<Digest, ()> {
+        let res = self.finalize_mut();
+        memzero_value(self.state);
+        res
     }
 }
 
@@ -191,6 +204,25 @@ mod test {
             let result_hash = hasher.finalize().unwrap();
             assert!(result_hash.as_ref() == expected_hash.as_slice());
         }
+    }
+
+    #[test]
+    fn test_finalize_same_output() {
+        let data = [1, 2, 3, 4];
+
+        let h1 = {
+            let mut hasher = State::new(32, None).unwrap();
+            hasher.update(&data).unwrap();
+            hasher.finalize().unwrap()
+        };
+
+        let h2 = {
+            let mut hasher = State::new(32, None).unwrap();
+            hasher.update(&data).unwrap();
+            hasher.finalize_memzero().unwrap()
+        };
+
+        assert_eq!(h1, h2);
     }
 
     #[test]

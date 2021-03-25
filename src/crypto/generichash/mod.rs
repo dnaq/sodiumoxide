@@ -7,7 +7,8 @@ use ffi::{
     crypto_generichash_update,
 };
 
-use libc::c_ulonglong;
+use cty::c_ulonglong;
+
 use std::mem;
 use std::ptr;
 

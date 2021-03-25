@@ -9,7 +9,9 @@ pub use ed25519::{
 };
 
 use ffi;
-use libc::c_ulonglong;
+
+use cty::c_ulonglong;
+
 #[cfg(not(feature = "std"))]
 use prelude::*;
 use std::fmt;

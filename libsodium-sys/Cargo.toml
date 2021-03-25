@@ -15,17 +15,16 @@ version = "0.2.6"
 pkg-config = "0.3"
 walkdir = "2"
 
-[target.'cfg(target_env = "msvc")'.build-dependencies]
-libc = { version = "0.2" , default-features = false }
-
 [target.'cfg(not(target_env = "msvc"))'.build-dependencies]
 cc = "1.0"
 
 [dependencies]
-libc = { version = "0.2" , default-features = false }
+cty = { version = "0.2.1"}
 
 [lib]
 name = "libsodium_sys"
 
 [features]
 use-pkg-config = []
+default = []
+

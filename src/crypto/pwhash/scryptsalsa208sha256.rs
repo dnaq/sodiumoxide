@@ -2,7 +2,9 @@
 //! and SHA-256
 
 use ffi;
-use libc::c_ulonglong;
+
+use cty::c_ulonglong;
+
 use randombytes::randombytes_into;
 
 /// Number of bytes in a `Salt`.

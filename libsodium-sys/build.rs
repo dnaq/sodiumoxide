@@ -2,7 +2,7 @@
 extern crate cc;
 
 #[cfg(target_env = "msvc")]
-extern crate libc;
+extern crate cty as libc;
 
 extern crate pkg_config;
 extern crate walkdir;
@@ -149,7 +149,14 @@ fn make_libsodium(target: &str, source_dir: &Path, install_dir: &Path) -> PathBu
     let build_compiler = cc::Build::new().get_compiler();
     let mut compiler = build_compiler.path().to_str().unwrap().to_string();
     let mut cflags = build_compiler.cflags_env().into_string().unwrap();
-    let mut host_arg = format!("--host={}", target);
+    let ldflags = env::var("LDFLAGS").unwrap_or_default();
+
+    // Allow autoconf host argument to be overridden
+    let mut host_arg = match env::var("SODIUM_HOST") {
+        Ok(v) => format!("--host={}", v),
+        _ => format!("--host={}", target),
+    };
+
     let mut cross_compiling = target != env::var("HOST").unwrap();
     if target.contains("-ios") {
         // Determine Xcode directory path
@@ -238,7 +245,12 @@ fn make_libsodium(target: &str, source_dir: &Path, install_dir: &Path) -> PathBu
         configure_cmd.env("CC", &compiler);
     }
     if !cflags.is_empty() {
+        println!("Using CFLAGS: {}", cflags);
         configure_cmd.env("CFLAGS", &cflags);
+    }
+    if !ldflags.is_empty() {
+        println!("Using LDFLAGS: {}", ldflags);
+        configure_cmd.env("LDFLAGS", &ldflags);
     }
     if env::var("SODIUM_DISABLE_PIE").is_ok() {
         configure_cmd.arg("--disable-pie");
@@ -262,8 +274,13 @@ fn make_libsodium(target: &str, source_dir: &Path, install_dir: &Path) -> PathBu
 
     // Run `make check`, or `make all` if we're cross-compiling
     let j_arg = format!("-j{}", env::var("NUM_JOBS").unwrap());
-    let make_arg = if cross_compiling { "all" } else { "check" };
+    let make_arg = if cross_compiling { "install" } else { "check" };
+
     let mut make_cmd = Command::new("make");
+    if !cflags.is_empty() {
+        make_cmd.env("CFLAGS", &cflags);
+    }
+
     let make_status = make_cmd
         .current_dir(&source_dir)
         .env("V", "1")

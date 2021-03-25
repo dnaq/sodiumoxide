@@ -1,6 +1,7 @@
 // crypto_pwhash_scryptsalsa208sha256.h
 
-use libc::{c_ulonglong, size_t};
+use cty::{c_ulonglong, size_t};
+
 use libsodium_sys::*;
 use std::ffi::CStr;
 

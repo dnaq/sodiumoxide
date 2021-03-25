@@ -12,7 +12,9 @@ macro_rules! argon2_module (($pwhash_name:ident,
                            $memlimit_sensitive:expr,
                            $variant:expr) => (
 
-use libc::{c_int, c_ulonglong};
+
+use cty::{c_int, c_ulonglong};
+
 use randombytes::randombytes_into;
 
 /// Number of bytes in a `Salt`.

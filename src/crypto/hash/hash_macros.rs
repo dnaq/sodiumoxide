@@ -7,7 +7,8 @@ macro_rules! hash_module (($hash_name:ident,
                            $blockbytes:expr) => (
 
 use std::mem;
-use libc::c_ulonglong;
+
+use cty::{c_ulonglong};
 
 /// Number of bytes in a `Digest`.
 pub const DIGESTBYTES: usize = $hashbytes as usize;

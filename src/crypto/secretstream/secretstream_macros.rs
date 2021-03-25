@@ -13,7 +13,9 @@ macro_rules! stream_module (($state_name: ident,
                              $tag_rekey: expr,
                              $tag_final: expr) => (
 
-use libc::c_ulonglong;
+
+use cty::{c_ulonglong};
+
 #[cfg(not(feature = "std"))]
 use prelude::Vec;
 use randombytes::randombytes_into;

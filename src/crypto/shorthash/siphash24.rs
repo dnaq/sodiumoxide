@@ -1,7 +1,9 @@
 //! `SipHash-2-4`
 
 use ffi;
-use libc::c_ulonglong;
+
+use cty::c_ulonglong;
+
 use randombytes::randombytes_into;
 
 /// Number of bytes in a `Digest`.

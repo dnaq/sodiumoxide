@@ -247,7 +247,7 @@ mod test {
         assert_ne!(&x, t);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "libc"))]
     #[test]
     fn test_mlock_fail() {
         // This value should be bigger than platform's page size so that we can

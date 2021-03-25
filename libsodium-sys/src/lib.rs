@@ -4,7 +4,7 @@
 #![allow(non_snake_case)]
 #![allow(clippy::all)] // we can't control bindgen output to make clippy happy
 
-extern crate libc;
+extern crate cty as libc;
 
 mod sodium_bindings;
 pub use sodium_bindings::*;

@@ -215,6 +215,12 @@ macro_rules! new_type {
                 memzero(&mut self.0);
             }
         }
+        impl zeroize::Zeroize for $name {
+            fn zeroize(&mut self) {
+                use utils::memzero;
+                memzero(&mut self.0);
+            }
+        }
         impl ::std::fmt::Debug for $name {
             fn fmt(&self,
                    formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {

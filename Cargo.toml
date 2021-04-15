@@ -19,9 +19,10 @@ members = ["libsodium-sys", "testcrate"]
 
 [dependencies]
 ed25519 = { version = "1", default-features = false }
-libc = { version = "^0.2.41" , default-features = false }
+libc = { version = "^0.2.41", default-features = false }
 libsodium-sys = { version = "0.2.5", path = "libsodium-sys" }
 serde = { version = "^1.0.59", default-features = false, optional = true }
+zeroize = { version = "^1.2.0" }
 
 [dev-dependencies]
 serde = "^1.0.59"

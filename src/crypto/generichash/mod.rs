@@ -1,10 +1,42 @@
-//! `GenericHash`.
+//! Generic hash algorithm for calculating a determinstic, fixed-length fingerprint for an
+//! arbitrarily long message.
 //!
+//! The generichash is used to derive a fixed-length fingerprint from an arbitrarily long message,
+//! which can be used (for example) for file integrity checking, or creating unique identifiers to
+//! index arbitrarily long data.
+//!
+//! For most purposes, another API exposed by sodiumoxide should be used instead of generichash:
+//! * Password hashing: [`pwhash::pwhash`](crate::crypto::pwhash::pwhash)
+//! * Password-based key derivation: [`pwhash::derive_key`](crate::crypto::pwhash::derive_key)
+//! * Symmetric authentication (HMAC): [`auth`](crate::crypto::auth)
+//! * Hash tables: [`shorthash`](crate::crypto::shorthash)
+//!
+//! This API corresponds to the libsodium [`crypto_generichash`
+//! API](https://doc.libsodium.org/hashing/generic_hashing). The algorithm used is
+//! [BLAKE2b](https://www.blake2.net/).
+//!
+//! # Examples
+//! ```rust
+//! use sodiumoxide::crypto::generichash;
+//!
+//! let msg_a = b"Some message to verify, could be the contents of a file to fingerprint.";
+//! let msg_b = msg_a.clone();
+//! // Slight change to this message: No period at the end
+//! let msg_c = b"Some message to verify, could be the contents of a file to fingerprint";
+//!
+//! // Specifying `None` for output size uses the recommended minimum size to avoid collisions. We
+//! // don't want to use a key.
+//! let digest_a = generichash::hash(&msg_a[..], None, None).unwrap();
+//! let digest_b = generichash::hash(&msg_b[..], None, None).unwrap();
+//! assert_eq!(digest_a, digest_b);
+//! let digest_c = generichash::hash(&msg_c[..], None, None).unwrap();
+//! assert_ne!(digest_a, digest_c);
+//! ```
 use ffi::{
     crypto_generichash, crypto_generichash_BYTES, crypto_generichash_BYTES_MAX,
-    crypto_generichash_BYTES_MIN, crypto_generichash_KEYBYTES_MAX, crypto_generichash_KEYBYTES_MIN,
-    crypto_generichash_final, crypto_generichash_init, crypto_generichash_state,
-    crypto_generichash_update,
+    crypto_generichash_BYTES_MIN, crypto_generichash_KEYBYTES, crypto_generichash_KEYBYTES_MAX,
+    crypto_generichash_KEYBYTES_MIN, crypto_generichash_final, crypto_generichash_init,
+    crypto_generichash_state, crypto_generichash_update,
 };
 
 use libc::c_ulonglong;
@@ -20,11 +52,17 @@ pub const DIGEST_MIN: usize = crypto_generichash_BYTES_MIN as usize;
 /// Maximum of allowed bytes in a `Digest`
 pub const DIGEST_MAX: usize = crypto_generichash_BYTES_MAX as usize;
 
+/// Recommended `Digest` size
+pub const DIGEST_RECOMMENDED: usize = crypto_generichash_BYTES as usize;
+
 /// Minimium of allowed bytes in a key
 pub const KEY_MIN: usize = crypto_generichash_KEYBYTES_MIN as usize;
 
 /// Maximum of allowed bytes in a key
 pub const KEY_MAX: usize = crypto_generichash_KEYBYTES_MAX as usize;
+
+/// Recommended key size
+pub const KEY_RECOMMENDED: usize = crypto_generichash_KEYBYTES as usize;
 
 /// `State` contains the state for multi-part (streaming) hash computations. This allows the caller
 /// to process a message as a sequence of multiple chunks.

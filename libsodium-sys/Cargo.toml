@@ -2,7 +2,6 @@
 authors = ["dnaq"]
 build = "build.rs"
 description = "FFI binding to libsodium"
-documentation = "https://sodiumoxide.github.io/sodiumoxide"
 keywords = ["libsodium", "NaCl", "crypto"]
 license = "MIT OR Apache-2.0"
 links = "sodium"

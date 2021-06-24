@@ -1,0 +1,4 @@
+[build.env]
+passthrough = [
+    "SYSTEM_DEPS_LIBSODIUM_BUILD_INTERNAL",
+]

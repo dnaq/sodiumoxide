@@ -12,7 +12,7 @@ categories = ["cryptography", "api-bindings"]
 version = "0.2.7"
 
 [build-dependencies]
-pkg-config = "0.3"
+system-deps = { git = "https://github.com/gdesmott/system-deps.git", branch = "system-lib" }
 walkdir = "2"
 
 [target.'cfg(target_env = "msvc")'.build-dependencies]
@@ -27,5 +27,5 @@ libc = { version = "0.2" , default-features = false }
 [lib]
 name = "libsodium_sys"
 
-[features]
-use-pkg-config = []
+[package.metadata.system-deps]
+libsodium = "1.0"

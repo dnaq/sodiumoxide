@@ -3,6 +3,10 @@ use std::{env, fs};
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
+    for (key, value) in std::env::vars() {
+        println!("{}: {}", key, value);
+    }
+
     let target = env::var("TARGET").unwrap();
 
     // Skip the test when `SODIUM_LIB_DIR` is set since there is no

@@ -9,6 +9,9 @@ on:
   pull_request:
     branches: [ master ]
 
+env:
+  SYSTEM_DEPS_LIBSODIUM_BUILD_INTERNAL: always
+
 jobs:
   test:
     name: test
@@ -34,7 +37,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test --all --verbose
+      run: cargo test --all -vv
     - name: Run tests (no-default-features)
       run: cargo test --all --verbose --no-default-features --features std
     - name: Build docs

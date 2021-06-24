@@ -32,4 +32,3 @@ rmp-serde = "^0.13.7"
 benchmarks = []
 std = []
 default = ["serde", "std"]
-use-pkg-config = ["libsodium-sys/use-pkg-config"]

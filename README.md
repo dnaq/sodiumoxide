@@ -73,10 +73,10 @@ C compiler (`cc`, `clang`, ...) must be installed in order to build libsodium fr
 
 ## Extended usage
 
-This project contains a snapshot of libsodium and builds it by default, favouring a statically-built, fixed version of the native library.
+By default this project will try to find libsodium on your system and dynamically link to it.
 
-Although it is highly recommended to use the default way with the pinned version, there are several ways you may want to use this crate:
-* link it against the library installed on your system
+There are several other ways you may want to use this crate:
+* statically link it against an internally build snapshot of libsodium
 * link it against a precompiled library that you built on your own
 
 You can do this by setting environment variables.
@@ -84,8 +84,7 @@ You can do this by setting environment variables.
 |Name|Description|Example value|Notes|
 | :- | :-------- | :---------- | :-- |
 |`SODIUM_LIB_DIR`|Where to find a precompiled library|`/usr/lib/x86_64-linux-gnu/`|The value should be set to the directory containing `.so`,`.a`,`.la`,`.dll` or `.lib`|
-|`SODIUM_SHARED`|Tell `rustc` to link the library dynamically|`1`|Works only with `SODIUM_LIB_DIR`. We check only the presence|
-|`SODIUM_USE_PKG_CONFIG`|Tell build.rs to find system library using pkg-config|`1`|We check only the presence|
+|`SYSTEM_DEPS_LIBSODIUM_BUILD_INTERNAL`|Build the internal snapshot of libsodium and statically link to it|`always`||
 |`SODIUM_DISABLE_PIE`|Build with `--disable-pie`|`1`|Certain situations may require building libsodium configured with `--disable-pie`. Useful for !Windows only and when building libsodium from source. We check only the presence|
 
 ### Examples on *nix
@@ -95,7 +94,6 @@ You can do this by setting environment variables.
 (Ubuntu: `apt install pkg-config`, OSX: `brew install pkg-config`, ...)
 
 ```
-export SODIUM_USE_PKG_CONFIG=1
 cargo build
 ```
 
@@ -105,8 +103,13 @@ See https://download.libsodium.org/doc/installation.
 
 ```
 export SODIUM_LIB_DIR=/home/user/libsodium-1.0.18/release/lib/
-export SODIUM_SHARED=1
 cargo build
+```
+
+#### Using static snapshot
+
+```
+SYSTEM_DEPS_LIBSODIUM_BUILD_INTERNAL=always cargo build
 ```
 
 ## Optional features

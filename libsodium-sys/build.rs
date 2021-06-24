@@ -4,114 +4,68 @@ extern crate cc;
 #[cfg(target_env = "msvc")]
 extern crate libc;
 
-extern crate pkg_config;
+extern crate system_deps;
 extern crate walkdir;
 
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::{env, path::PathBuf};
 
 static VERSION: &str = "1.0.18";
 
-fn main() {
-    println!("cargo:rerun-if-env-changed=SODIUM_LIB_DIR");
-    println!("cargo:rerun-if-env-changed=SODIUM_SHARED");
-    println!("cargo:rerun-if-env-changed=SODIUM_USE_PKG_CONFIG");
-
-    if cfg!(not(windows)) {
-        println!("cargo:rerun-if-env-changed=SODIUM_DISABLE_PIE");
-    }
-
-    if env::var("SODIUM_STATIC").is_ok() {
-        panic!("SODIUM_STATIC is deprecated. Use SODIUM_SHARED instead.");
-    }
-
-    let lib_dir_isset = env::var("SODIUM_LIB_DIR").is_ok();
-    let use_pkg_isset = if cfg!(feature = "use-pkg-config") {
-        true
-    } else {
-        env::var("SODIUM_USE_PKG_CONFIG").is_ok()
-    };
-    let shared_isset = env::var("SODIUM_SHARED").is_ok();
-
-    if lib_dir_isset && use_pkg_isset {
-        panic!("SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG. Set the only one env variable");
-    }
-
-    if lib_dir_isset {
-        find_libsodium_env();
-    } else if use_pkg_isset {
-        if shared_isset {
-            println!("cargo:warning=SODIUM_SHARED has no effect with SODIUM_USE_PKG_CONFIG");
-        }
-
-        find_libsodium_pkg();
-    } else {
-        if shared_isset {
-            println!(
-                "cargo:warning=SODIUM_SHARED has no effect for building libsodium from source"
-            );
-        }
-
-        build_libsodium();
-    }
-}
-
-/* Must be called when SODIUM_LIB_DIR is set to any value
-This function will set `cargo` flags.
-*/
-fn find_libsodium_env() {
-    let lib_dir = env::var("SODIUM_LIB_DIR").unwrap(); // cannot fail
-
-    println!("cargo:rustc-link-search=native={}", lib_dir);
-    let mode = if env::var("SODIUM_SHARED").is_ok() {
-        "dylib"
-    } else {
-        "static"
-    };
-    let name = if cfg!(target_env = "msvc") {
+fn get_lib_name() -> &'static str {
+    if cfg!(target_env = "msvc") {
         "libsodium"
     } else {
         "sodium"
-    };
-    println!("cargo:rustc-link-lib={}={}", mode, name);
-    println!(
-        "cargo:warning=Using unknown libsodium version.  This crate is tested against \
-         {} and may not be fully compatible with other versions.",
-        VERSION
-    );
+    }
 }
 
-/* Must be called when no SODIUM_USE_PKG_CONFIG env var is set
-This function will set `cargo` flags.
-*/
-#[cfg(target_env = "msvc")]
-fn find_libsodium_pkg() {
-    panic!("SODIUM_USE_PKG_CONFIG is not supported on msvc");
+fn configure_manual_lib(dir: &str) {
+    env::set_var("SYSTEM_DEPS_LIBSODIUM_NO_PKG_CONFIG", "1");
+    env::set_var("SYSTEM_DEPS_LIBSODIUM_SEARCH_NATIVE", &dir);
+    env::set_var("SYSTEM_DEPS_LIBSODIUM_LIB", &get_lib_name());
 }
 
-/* Must be called when SODIUM_USE_PKG_CONFIG env var is set
-This function will set `cargo` flags.
-*/
-#[cfg(not(target_env = "msvc"))]
-fn find_libsodium_pkg() {
-    match pkg_config::Config::new().probe("libsodium") {
-        Ok(lib) => {
-            if lib.version != VERSION {
-                println!(
-                    "cargo:warning=Using libsodium version {}.  This crate is tested against {} \
-                     and may not be fully compatible with {}.",
-                    lib.version, VERSION, lib.version
-                );
+fn main() {
+    println!("cargo:rerun-if-env-changed=SODIUM_LIB_DIR");
+
+    let deps = system_deps::Config::new()
+        .preserve_system_libs()
+        .add_build_internal("libsodium", |lib, version| {
+            #[cfg(windows)]
+            {
+                // We don't build anything on windows, we simply linked to precompiled
+                // libs.
+                use std::collections::HashMap;
+
+                let dir = get_lib_dir();
+
+                Ok(system_deps::Library {
+                    name: lib.to_string(),
+                    source: system_deps::Source::EnvVariables, // HACK: add source
+                    libs: vec![get_lib_name().to_string()],
+                    link_paths: vec![dir],
+                    frameworks: vec![],
+                    framework_paths: vec![],
+                    include_paths: vec![],
+                    defines: HashMap::new(),
+                    version: version.to_string(),
+                })
             }
-            for lib_dir in &lib.link_paths {
-                println!("cargo:lib={}", lib_dir.to_str().unwrap());
+            #[cfg(not(windows))]
+            {
+                let mut dir = build_libsodium();
+                dir.push("lib");
+                dir.push("pkgconfig");
+
+                system_deps::Library::from_internal_pkg_config(&dir, lib, version)
             }
-            for include_dir in &lib.include_paths {
-                println!("cargo:include={}", include_dir.to_str().unwrap());
-            }
-        }
+        });
+
+    if let Ok(dir) = env::var("SODIUM_LIB_DIR") {
+        configure_manual_lib(&dir);
+    }
+
+    match deps.probe() {
         Err(e) => {
             panic!(
                 "
@@ -131,19 +85,34 @@ You can try fixing this by installing pkg-config:
                 e
             );
         }
+        Ok(libs) => {
+            let lib = libs.get("libsodium").unwrap();
+            dbg!("aaaaaaaaaaaaaaaaaaaa");
+            dbg!(&lib);
+
+            if lib.version != VERSION {
+                println!(
+                    "cargo:warning=Using libsodium version {}.  This crate is tested against {} \
+                     and may not be fully compatible with {}.",
+                    lib.version, VERSION, lib.version
+                );
+            }
+
+            // Manually export DEP_SODIUM_LIB
+            for lib_dir in &lib.link_paths {
+                println!("cargo:lib={}", lib_dir.to_str().unwrap());
+            }
+        }
     }
 }
 
-#[cfg(windows)]
-fn make_libsodium(_: &str, _: &Path, _: &Path) -> PathBuf {
-    // We don't build anything on windows, we simply linked to precompiled
-    // libs.
-    get_lib_dir()
-}
-
 #[cfg(not(windows))]
-fn make_libsodium(target: &str, source_dir: &Path, install_dir: &Path) -> PathBuf {
-    use std::{fs, process::Command, str};
+fn make_libsodium(
+    target: &str,
+    source_dir: &std::path::Path,
+    install_dir: &std::path::Path,
+) -> PathBuf {
+    use std::{fs, path::Path, process::Command, str};
 
     // Decide on CC, CFLAGS and the --host configure argument
     let build_compiler = cc::Build::new().get_compiler();
@@ -331,7 +300,8 @@ fn get_lib_dir() -> PathBuf {
     get_crate_dir().join("mingw/win64/")
 }
 
-fn build_libsodium() {
+#[cfg(not(windows))]
+fn build_libsodium() -> PathBuf {
     use std::{ffi::OsStr, fs};
 
     // Determine build target triple
@@ -396,4 +366,6 @@ fn build_libsodium() {
 
     println!("cargo:include={}", include_dir.to_str().unwrap());
     println!("cargo:lib={}", lib_dir.to_str().unwrap());
+
+    install_dir
 }

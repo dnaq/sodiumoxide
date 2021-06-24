@@ -216,6 +216,10 @@ fn make_libsodium(target: &str, source_dir: &Path, install_dir: &Path) -> PathBu
             _ => panic!("Unknown iOS build target: {}", target),
         }
         cross_compiling = true;
+    } else if target.eq("i686-pc-windows-gnu") {
+        host_arg = "--host=i686-w64-mingw32".to_string();
+    } else if target.eq("x86_64-pc-windows-gnu") {
+        host_arg = "--host=x86_64-w64-mingw32".to_string();
     } else if target.contains("i686") {
         compiler += " -m32 -maes";
         cflags += " -march=i686";

@@ -32,4 +32,9 @@ rmp-serde = "^0.13.7"
 benchmarks = []
 std = []
 default = ["serde", "std"]
+# use-pkg-config should be deprecated in the future and become the default
 use-pkg-config = ["libsodium-sys/use-pkg-config"]
+# always force a static build, even if use-pkg-config becomes the default
+static = ["libsodium-sys/static"]
+# only force a static build on windows
+static-windows = ["libsodium-sys/static-windows"]

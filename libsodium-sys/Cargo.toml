@@ -28,4 +28,9 @@ libc = { version = "0.2" , default-features = false }
 name = "libsodium_sys"
 
 [features]
+# use-pkg-config should be deprecated in the future and become the default
 use-pkg-config = []
+# always force a static build, even if use-pkg-config becomes the default
+static = []
+# only force a static build on windows
+static-windows = []

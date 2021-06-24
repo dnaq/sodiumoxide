@@ -29,7 +29,7 @@ fn main() {
 
     let lib_dir_isset = env::var("SODIUM_LIB_DIR").is_ok();
     let use_pkg_isset = if cfg!(feature = "use-pkg-config") {
-        true
+        cfg!(not(feature = "static")) && cfg!(not(all(feature = "static-windows", windows)))
     } else {
         env::var("SODIUM_USE_PKG_CONFIG").is_ok()
     };

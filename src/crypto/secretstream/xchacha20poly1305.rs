@@ -247,6 +247,40 @@ mod test {
     }
 
     #[test]
+    fn push_pull_to_slice() {
+        let mut msg = [0; 128];
+
+        randombytes_into(&mut msg);
+        let key = gen_key();
+        let (mut push_stream, header) = Stream::init_push(&key).unwrap();
+        let mut pull_stream = Stream::init_pull(&header, &key).unwrap();
+
+        // insufficient to store ciphertext, we expect an error when we try to push to this
+        let mut c1 = [0; 128 + ABYTES - 1];
+        // sufficient for ciphertext, should be okay
+        let mut c2 = [0; 128 + ABYTES];
+        assert!(push_stream
+            .push_to_slice(&msg, None, Tag::Message, &mut c1[..])
+            .is_err());
+        assert_eq!(
+            push_stream
+                .push_to_slice(&msg, None, Tag::Final, &mut c2[..])
+                .unwrap(),
+            128 + ABYTES,
+        );
+
+        let mut m1 = [0; 127];
+        let mut m2 = [0; 128];
+        assert!(pull_stream.pull_to_slice(&c2, None, &mut m1[..]).is_err());
+        assert_eq!(
+            pull_stream.pull_to_slice(&c2, None, &mut m2[..]).unwrap(),
+            (Tag::Final, 128)
+        );
+
+        assert_eq!(&msg[..], &m2[..]);
+    }
+
+    #[test]
     fn cannot_pull_after_finalization() {
         let m = [0; 128];
         let key = gen_key();

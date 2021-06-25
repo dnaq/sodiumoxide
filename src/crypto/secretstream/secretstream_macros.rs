@@ -199,9 +199,9 @@ impl Stream<Push> {
     /// message `m` and its `tag`. Optionally includes additional data `ad`,
     /// which is not encrypted.
     pub fn push(&mut self, m: &[u8], ad: Option<&[u8]>, tag: Tag) -> Result<Vec<u8>, ()> {
-        let buf_len = self.push_check(m, tag)?;
+        self.push_check(m, tag)?;
 
-        let mut buf = Vec::with_capacity(buf_len);
+        let mut buf = Vec::new();
         self.push_impl(m, ad, tag, &mut buf)?;
         Ok(buf)
     }
@@ -212,13 +212,31 @@ impl Stream<Push> {
     ///
     /// The encrypted message is written to the `out` vector, overwriting any existing data there.
     pub fn push_to_vec(&mut self, m: &[u8], ad: Option<&[u8]>, tag: Tag, out: &mut Vec<u8>) -> Result<(), ()> {
-        let buf_len = self.push_check(m, tag)?;
-        out.clear();
-        out.reserve(buf_len);
+        self.push_check(m, tag)?;
         self.push_impl(m, ad, tag, out)
     }
 
-    fn push_check(&mut self, m: &[u8], tag: Tag) -> Result<usize, ()> {
+    /// All data (including optional fields) is authenticated. Encrypts a
+    /// message `m` and its `tag`. Optionally includes additional data `ad`,
+    /// which is not encrypted.
+    ///
+    /// The encrypted message is written to the `out` slice, which must be at least `m.len()` +
+    /// [`ABYTES`](crate::crypto::secretstream::ABYTES) long, overwriting the first `m.len() +
+    /// ABYTES` bytes. An error will be returned if the slice is not long enough. If the push is
+    /// successful, the length of data written to the slice will be returned.
+    pub fn push_to_slice(&mut self, m: &[u8], ad: Option<&[u8]>, tag: Tag, out: &mut [u8]) -> Result<usize, ()> {
+        self.push_check(m, tag)?;
+        if out.len() < self.ciphertext_len(m) {
+            return Err(());
+        }
+        // SAFETY: The previous if block ensures that the slice has at least m.len() + $abytes of
+        // capacity.
+        unsafe {
+            self.push_impl_ptr(m, ad, tag, out.as_mut_ptr())
+        }
+    }
+
+    fn push_check(&mut self, m: &[u8], tag: Tag) -> Result<(), ()> {
         if self.finalized {
             return Err(());
         }
@@ -229,31 +247,49 @@ impl Stream<Push> {
         if tag == Tag::Final {
             self.finalized = true;
         }
-        Ok(m_len + ABYTES)
+        Ok(())
+    }
+
+    // Avoid duplication of ciphertext length calculation
+    fn ciphertext_len(&self, m: &[u8]) -> usize {
+        m.len() + ABYTES
     }
 
     fn push_impl(&mut self, m: &[u8], ad: Option<&[u8]>, tag: Tag, buf: &mut Vec<u8>) -> Result<(), ()> {
+        buf.clear();
+        buf.reserve(self.ciphertext_len(m));
+        // SAFETY: The call to buf.reserve() above ensures that the vector has sufficient capacity
+        // to store the ciphertext. The buf.set_len() call is safe because it will only be reached
+        // if the push is successful, and c_len bytes are written to buf.
+        unsafe {
+            let c_len = self.push_impl_ptr(m, ad, tag, buf.as_mut_ptr())?;
+            buf.set_len(c_len);
+        }
+        Ok(())
+    }
+
+    // SAFETY: buf must be a mutable pointer to at least m.len() + $abytes of allocated memory, to
+    // which the ciphertext can be written.
+    unsafe fn push_impl_ptr(&mut self, m: &[u8], ad: Option<&[u8]>, tag: Tag, buf: *mut u8) -> Result<usize, ()> {
         let (ad_p, ad_len) = ad
             .map(|ad| (ad.as_ptr(), ad.len()))
             .unwrap_or((ptr::null(), 0));
         let mut c_len: c_ulonglong = 0;
-        unsafe {
-            let rc = $push_name(
-                &mut self.state,
-                buf.as_mut_ptr(),
-                &mut c_len,
-                m.as_ptr(),
-                m.len() as c_ulonglong,
-                ad_p,
-                ad_len as c_ulonglong,
-                tag as u8,
-                );
-            if rc != 0 {
-                return Err(());
-            }
-            buf.set_len(c_len as usize);
+
+        let rc = $push_name(
+            &mut self.state,
+            buf,
+            &mut c_len,
+            m.as_ptr(),
+            m.len() as c_ulonglong,
+            ad_p,
+            ad_len as c_ulonglong,
+            tag as u8,
+            );
+        if rc != 0 {
+            return Err(());
         }
-        Ok(())
+        Ok(c_len as usize)
     }
 
     /// Create a ciphertext for an empty message with the `TAG_FINAL` added
@@ -309,8 +345,9 @@ impl Stream<Pull> {
     /// Applications will typically use a `while stream.is_not_finalized()`
     /// loop to authenticate and decrypt a stream of messages.
     pub fn pull(&mut self, c: &[u8], ad: Option<&[u8]>) -> Result<(Vec<u8>, Tag), ()> {
-        let m_len = self.pull_check(c)?;
-        let mut buf = Vec::with_capacity(m_len);
+        self.pull_check(c)?;
+
+        let mut buf = Vec::new();
         let tag = self.pull_impl(c, ad, &mut buf)?;
         Ok((buf, tag))
     }
@@ -329,13 +366,41 @@ impl Stream<Pull> {
     ///
     /// The decrypted message is written to the `out` vector, overwriting any existing data there.
     pub fn pull_to_vec(&mut self, c: &[u8], ad: Option<&[u8]>, out: &mut Vec<u8>) -> Result<Tag, ()> {
-        let m_len = self.pull_check(c)?;
-        out.clear();
-        out.reserve(m_len);
+        self.pull_check(c)?;
         self.pull_impl(c, ad, out)
     }
 
-    fn pull_check(&self, c: &[u8]) -> Result<usize, ()> {
+    /// Verifies that `c` is a valid ciphertext with a correct authentication tag
+    /// given the internal state of the `Stream` (ciphertext streams cannot be
+    /// decrypted out of order for this reason). Also may validate the optional
+    /// unencrypted additional data `ad` using the authentication tag attached to
+    /// `c`. Finally decrypts the ciphertext and tag, and checks the tag
+    /// validity.
+    ///
+    /// If any authentication fails, the stream has already been finalized, or if
+    /// the tag byte for some reason does not correspond to a valid `Tag`,
+    /// returns `Err(())`. Otherwise returns the plaintext and the tag.
+    /// Applications will typically use a `while stream.is_not_finalized()`
+    /// loop to authenticate and decrypt a stream of messages.
+    ///
+    /// The decrypted message is written to the `out` slice, which must be at least `c.len()` -
+    /// [`ABYTES`](crate::crypto::secretstream::ABYTES) long, overwriting the first `c.len() -
+    /// ABYTES` bytes. An error will be returned if the slice is not long enough. If the pull is
+    /// successful, the length of the data written to the slice will be returned, alongside the
+    /// decrypted message tag.
+    pub fn pull_to_slice(&mut self, c: &[u8], ad: Option<&[u8]>, out: &mut [u8]) -> Result<(Tag, usize), ()> {
+        self.pull_check(c)?;
+        if out.len() < self.plaintext_len(c) {
+            return Err(());
+        }
+        // SAFETY: The previous if block ensures that the slice has at least c.len() - $abytes of
+        // capacity.
+        unsafe {
+            self.pull_impl_ptr(c, ad, out.as_mut_ptr())
+        }
+    }
+
+    fn pull_check(&self, c: &[u8]) -> Result<(), ()> {
         if self.finalized {
             return Err(());
         }
@@ -348,38 +413,54 @@ impl Stream<Pull> {
         if m_len > messagebytes_max() {
             return Err(());
         }
-        Ok(m_len)
+        Ok(())
+    }
+
+    fn plaintext_len(&self, c: &[u8]) -> usize {
+        c.len() - ABYTES
     }
 
     fn pull_impl(&mut self, c: &[u8], ad: Option<&[u8]>, buf: &mut Vec<u8>) -> Result<Tag, ()> {
+        buf.clear();
+        buf.reserve(self.plaintext_len(c));
+        // SAFETY: The call to buf.reserve ensures the vector has sufficient capacity allocated to
+        // store the plaintext. The buf.set_len call is safe because it will only be reached if the
+        // pull is successful, and m_len bytes are written to buf.
+        unsafe {
+            let (tag, m_len) = self.pull_impl_ptr(c, ad, buf.as_mut_ptr())?;
+            buf.set_len(m_len);
+            Ok(tag)
+        }
+    }
+
+    // SAFETY: buf must be a mutable pointer to at least c.len() - $abytes of allocated memory, to
+    // which the plaintext can be written.
+    unsafe fn pull_impl_ptr(&mut self, c: &[u8], ad: Option<&[u8]>, buf: *mut u8) -> Result<(Tag, usize), ()> {
         let mut tag: u8 = 0;
         let mut m_len: c_ulonglong = 0;
         let (ad_p, ad_len) = ad
             .map(|ad| (ad.as_ptr(), ad.len()))
             .unwrap_or((ptr::null(), 0));
-        unsafe {
-            let rc = $pull_name(
-                &mut self.state,
-                buf.as_mut_ptr(),
-                &mut m_len,
-                &mut tag,
-                c.as_ptr(),
-                c.len() as c_ulonglong,
-                ad_p,
-                ad_len as c_ulonglong,
-                );
-            if rc != 0 {
-                return Err(());
-            }
-            // rc == 0 and tag is initialized
-            buf.set_len(m_len as usize);
+
+        let rc = $pull_name(
+            &mut self.state,
+            buf,
+            &mut m_len,
+            &mut tag,
+            c.as_ptr(),
+            c.len() as c_ulonglong,
+            ad_p,
+            ad_len as c_ulonglong,
+            );
+        if rc != 0 {
+            return Err(());
         }
 
         let tag = Tag::from_u8(tag)?;
         if tag == Tag::Final {
             self.finalized = true;
         }
-        Ok(tag)
+        Ok((tag, m_len as usize))
     }
 }
 
